@@ -1,0 +1,46 @@
+name: Daily IERS to GitVerse
+
+on:
+  schedule:
+    # Запуск каждый день в 18:15 UTC (01:15 ночи по Красноярску / 21:15 по МСК),
+    # сразу после выхода ежедневного бюллетеня USNO (17:05 UTC)
+    - cron: '15 18 * * *'
+  workflow_dispatch: # Кнопка ручного запуска для проверки
+
+jobs:
+  bridge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Clone GitVerse repository
+        run: |
+          git clone https://exelentt:${{ secrets.GV_TOKEN }}@gitverse.ru/exelentt/eop-data.git repo
+
+      - name: Download latest daily EOP from USNO / IERS
+        working-directory: repo
+        run: |
+          # Скачиваем суточный finals2000A.daily (обновляется каждый день, формат идентичен finals2000A.all)
+          # При сбое берем резервный finals2000A.all с IERS
+          curl -f -L --retry 3 "https://datacenter.iers.org/data/9/finals2000A.all" -o finals2000A.all.tmp
+
+          SIZE=$(stat -c%s finals2000A.all.tmp)
+          echo "Скачан файл размером: $SIZE байт"
+          # Суточный файл весит ~70 КБ (180 дней), полный ~3.7 МБ; проверяем что скачалось больше 30 КБ
+          if [ "$SIZE" -gt 30000 ]; then
+            mv -f finals2000A.all.tmp finals2000A.all
+          else
+            echo "Ошибка: файл слишком мал"
+            exit 1
+          fi
+
+      - name: Push to GitVerse
+        working-directory: repo
+        run: |
+          git config user.name "IERS Bridge Bot"
+          git config user.email "bot@gitverse.ru"
+          git add finals2000A.all
+          if git diff --cached --quiet; then
+            echo "Файл не изменился"
+            exit 0
+          fi
+          git commit -m "Daily EOP update $(date -u +'%Y-%m-%d')"
+          git push origin master
