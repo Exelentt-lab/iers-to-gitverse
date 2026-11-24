@@ -18,12 +18,18 @@ jobs:
       - name: Download latest daily EOP from USNO / IERS
         working-directory: repo
         run: |
-          # Скачиваем суточный finals2000A.daily (обновляется каждый день, формат идентичен finals2000A.all)
+          # Скачиваем файл finals2000A.all
           # При сбое берем резервный finals2000A.all с IERS
-          curl -f -L --retry 3 "https://datacenter.iers.org/data/9/finals2000A.all" -o finals2000A.all.tmp
+          curl -f -L -R --retry 3 "https://datacenter.iers.org/data/9/finals2000A.all" -o finals2000A.all.tmp
 
           SIZE=$(stat -c%s finals2000A.all.tmp)
+          SERVER_DATE=$(date -u -r finals2000A.all.tmp +'%Y-%m-%d %H:%M:%S UTC')
+          LAST_MEASURED=$(grep -E "^[0-9]{6} [0-9.]+ I" finals2000A.all.tmp | tail -n 1 | awk '{print "20"$1}')
+
+          echo "Дата обновления файла на сервере IERS: $SERVER_DATE"
+          echo "Последняя измеренная дата (флаг I): $LAST_MEASURED"
           echo "Скачан файл размером: $SIZE байт"
+          
           # Суточный файл весит ~70 КБ (180 дней), полный ~3.7 МБ; проверяем что скачалось больше 30 КБ
           if [ "$SIZE" -gt 30000 ]; then
             mv -f finals2000A.all.tmp finals2000A.all
